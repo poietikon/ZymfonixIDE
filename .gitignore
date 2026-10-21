@@ -1,0 +1,9 @@
+# Upstream checkouts, build trees and outputs (scripts/fetch-upstream.sh, build.sh)
+/.build/
+/dist/
+/handoff/
+
+# Local junk
+.DS_Store
+__pycache__/
+*.pyc

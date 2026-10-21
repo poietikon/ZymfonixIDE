@@ -1,0 +1,256 @@
+# Full build of every release asset: macOS arm64 + x64 (DMG, ZIP) and Linux x64
+# (deb, tar.gz, AppImage), each verified. Produces artifacts only; publishing is
+# release.yml's job. Run it by hand to test a branch (Actions > Build).
+#
+# Job layout and runner/container images follow VSCodium's publish-stable-macos
+# and publish-stable-linux workflows for the pinned VSCodium version. Review
+# them when the upstream-update PR lists those files as changed.
+
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      release_version:
+        description: Version to stamp (<code-oss tag><2-digit revision>)
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: Version to stamp; empty = <code-oss tag>00 (test build)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+  GH_REPO_PATH: ${{ github.repository }}
+  RELEASE_VERSION: ${{ inputs.release_version }}
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14
+          - arch: x64
+            runner: macos-15-intel
+    env:
+      OS_NAME: osx
+      VSCODE_ARCH: ${{ matrix.arch }}
+      MAX_OLD_SPACE_SIZE: 12288
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch pinned VSCodium
+        run: scripts/fetch-upstream.sh
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .build/vscodium/.nvmrc
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/build.sh
+
+      - name: Package (ad-hoc signed DMG and ZIP)
+        run: scripts/package-macos.sh
+
+      - name: Verify
+        run: scripts/verify-macos.sh
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: assets-macos-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  linux-compile:
+    name: Linux x64 (compile)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    env:
+      OS_NAME: linux
+      VSCODE_ARCH: x64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch pinned VSCodium
+        run: scripts/fetch-upstream.sh
+
+      - uses: egor-tensin/setup-gcc@a2861a8b8538f49cf2850980acccf6b05a1b2ae4 # v2.0
+        with:
+          version: 10
+          platform: x64
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .build/vscodium/.nvmrc
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install libkrb5-dev
+        run: sudo apt-get update -y && sudo apt-get install -y libkrb5-dev
+
+      - name: Compile
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/build.sh
+
+      - name: Hand off to the packaging job
+        run: scripts/linux-handoff.sh pack handoff
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-vscodium-tree
+          path: handoff/vscodium-tree.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-vscode-compiled
+          path: handoff/vscode.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  linux-package:
+    name: Linux x64 (deb, tar.gz)
+    needs: linux-compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    # VSCodium's public Linux build image (Ubuntu 20.04 + toolchain); the
+    # binaries are built against a glibc 2.28 sysroot for wide compatibility.
+    container:
+      image: vscodium/vscodium-linux-build-agent:focal-x64
+    env:
+      OS_NAME: linux
+      VSCODE_ARCH: x64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: linux-{vscodium-tree,vscode-compiled}
+          merge-multiple: true
+          path: handoff
+
+      - name: Install jq
+        run: command -v jq || { apt-get update -y && apt-get install -y jq; }
+
+      - name: Unpack prepared tree
+        run: scripts/linux-handoff.sh unpack handoff
+
+      - name: Install dependencies
+        run: .build/vscodium/build/linux/deps.sh
+
+      - name: Package
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/package-linux.sh
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: assets-linux-x64
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-vscode-bin
+          path: .build/vscode-bin.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  linux-appimage:
+    name: Linux x64 (AppImage)
+    needs: linux-package
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container: ghcr.io/pkgforge-dev/archlinux:v2026.08.31
+    env:
+      OS_NAME: linux
+      VSCODE_ARCH: x64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install jq
+        run: pacman -Sy --noconfirm --needed jq
+
+      - name: Prepare container
+        uses: pkgforge-dev/anylinux-setup-action@b2d1ce4216f71162e00ae58fa11ee9aeb723d0d5 # v5
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: linux-{vscodium-tree,vscode-bin}
+          merge-multiple: true
+          path: handoff
+
+      - name: Unpack prepared tree
+        run: scripts/linux-handoff.sh unpack handoff
+
+      - name: Make AppImage
+        run: scripts/package-appimage.sh handoff/vscode-bin.tar.gz
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: assets-linux-appimage
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  verify:
+    name: Verify Linux assets and completeness
+    needs: [macos, linux-package, linux-appimage]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: assets-*
+          merge-multiple: true
+          path: dist
+
+      - name: Verify Linux packages (installs the .deb)
+        run: scripts/verify-linux.sh
+
+      - name: Verify the complete asset set
+        run: scripts/verify-assets.sh dist
+
+      - name: Summary
+        run: |
+          {
+            echo "### Zymfonix IDE ${RELEASE_VERSION:-test build}"
+            echo '```'
+            ls -lh dist
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"

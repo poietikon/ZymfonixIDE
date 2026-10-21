@@ -1,0 +1,59 @@
+# Daily check for a new stable VSCodium release (= new stable Code OSS that
+# VSCodium's patches support). If there is one, open a pull request that bumps
+# upstream.json and start CI on it. Nothing is built or published here.
+#
+# Needs: Settings > Actions > General > "Allow GitHub Actions to create and
+# approve pull requests" (otherwise the PR step fails with a clear error).
+
+name: Check upstream
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-upstream
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the update branch
+      pull-requests: write # open the pull request
+      actions: write # start CI on the branch (pushes by GITHUB_TOKEN do not trigger workflows)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check for a newer VSCodium release
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/check-upstream.sh --write --pr-body "${RUNNER_TEMP}/pr.md"
+
+      - name: Open update pull request
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VSCODIUM_TAG: ${{ steps.check.outputs.vscodium_tag }}
+          VSCODE_TAG: ${{ steps.check.outputs.vscode_tag }}
+        run: |
+          BRANCH="upstream/vscodium-${VSCODIUM_TAG}"
+          if git ls-remote --exit-code --heads origin "${BRANCH}" > /dev/null; then
+            echo "Branch ${BRANCH} already exists; an update PR is already open or was closed on purpose."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${BRANCH}"
+          git commit -am "Update upstream: Code OSS ${VSCODE_TAG} (VSCodium ${VSCODIUM_TAG})"
+          git push origin "${BRANCH}"
+          gh pr create --base "${GITHUB_REF_NAME}" --head "${BRANCH}" \
+            --title "Update upstream: Code OSS ${VSCODE_TAG} (VSCodium ${VSCODIUM_TAG})" \
+            --body-file "${RUNNER_TEMP}/pr.md"
+          gh workflow run ci.yml --ref "${BRANCH}"
+          echo "Opened update PR for Code OSS ${VSCODE_TAG} and started CI on ${BRANCH}." >> "${GITHUB_STEP_SUMMARY}"

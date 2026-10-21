@@ -1,0 +1,65 @@
+# Cheap checks for every push and pull request (a few minutes, no compiling):
+# lint, icon validation, and a dry run that applies all VSCodium patches and
+# Zymfonix edits to the pinned Code OSS sources for macOS and Linux.
+# The full multi-hour build only runs in build.yml / release.yml.
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          curl -sSfL -o actionlint.tar.gz "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
+          sudo tar -xzf actionlint.tar.gz -C /usr/local/bin actionlint
+          rm actionlint.tar.gz
+
+      - name: Lint
+        run: scripts/lint.sh
+
+  dry-run:
+    name: Prepare dry run (${{ matrix.os }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [osx, linux]
+    env:
+      GH_REPO_PATH: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Apply VSCodium patches and Zymfonix branding to Code OSS
+        run: scripts/dry-run-prepare.sh --os ${{ matrix.os }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: dry-run-log-${{ matrix.os }}
+          path: .build/*.log
+          retention-days: 7

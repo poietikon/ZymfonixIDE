@@ -1,0 +1,4 @@
+# Literal ${...} in single quotes is intentional (text we search for in upstream files).
+disable=SC2016
+# VSCodium scripts are only present after scripts/fetch-upstream.sh.
+disable=SC1091

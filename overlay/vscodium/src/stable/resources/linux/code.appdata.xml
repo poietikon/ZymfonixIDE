@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop">
+	<id>@@NAME@@.desktop</id>
+	<metadata_license>@@LICENSE@@</metadata_license>
+	<project_license>@@LICENSE@@</project_license>
+	<name>@@NAME_LONG@@</name>
+	<url type="homepage">https://zymfonix.com</url>
+	<summary>Zymfonix IDE. A Code - OSS based code editor.</summary>
+	<description>
+		<p>Zymfonix IDE is an independent, Zymfonix-branded distribution of Code - OSS, the open-source project behind Visual Studio Code. It is built with the VSCodium build tooling and uses the Open VSX extension registry. It is not a Microsoft product.</p>
+	</description>
+</component>
