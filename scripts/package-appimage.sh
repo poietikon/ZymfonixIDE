@@ -8,6 +8,7 @@ set -euo pipefail
 
 BIN="${1:-${ZYM_BUILD_DIR}/vscode-bin.tar.gz}"
 [[ -f "${BIN}" ]] || die "usage: package-appimage.sh <vscode-bin.tar.gz>"
+BIN="$( cd "$( dirname "${BIN}" )" && pwd )/$( basename "${BIN}" )"
 [[ -f "${VSCODIUM_DIR}/.zymfonix-overlay" ]] || die "no prepared VSCodium tree (run linux-handoff.sh unpack)"
 
 cd "${VSCODIUM_DIR}"
