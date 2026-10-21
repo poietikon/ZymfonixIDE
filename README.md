@@ -39,7 +39,7 @@ None of these are shared with Visual Studio Code, Code - OSS or VSCodium (`scrip
 
 ## Install
 
-Download from the [latest release](https://github.com/zymfonix/zymfonix-ide/releases/latest).
+Download from the [latest release](https://github.com/poietikon/ZymfonixIDE/releases/latest).
 
 ### macOS
 

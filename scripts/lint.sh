@@ -28,7 +28,7 @@ jq -e '(.vscodium.commit | test("^[0-9a-f]{40}$")) and (.vscode.commit | test("^
 step "branding/product.json identifiers"
 TMP="$( mktemp )"
 # Check the overrides on their own, with the Open VSX gallery VSCodium adds.
-sed 's|@@GH_REPO_PATH@@|zymfonix/zymfonix-ide|g' branding/product.json \
+sed 's|@@GH_REPO_PATH@@|poietikon/ZymfonixIDE|g' branding/product.json \
   | jq '. + {extensionsGallery: {serviceUrl: "https://open-vsx.org/vscode/gallery"}}' > "${TMP}"
 python3 scripts/check-product.py "${TMP}" || fail=1
 rm -f "${TMP}"
