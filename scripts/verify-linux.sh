@@ -38,7 +38,8 @@ check_desktop() { # main .desktop, url handler .desktop
 # {{{ .deb
 echo "DEB: ${DEB}"
 check "package name is zymfonix-ide" test "$( dpkg-deb -f "${DEB}" Package )" = "zymfonix-ide"
-check "package version starts with ${RELEASE_VERSION}" bash -c "dpkg-deb -f '${DEB}' Version | grep -q '^${RELEASE_VERSION}-'"
+# Upstream writes either "<version>" or (older releases) "<version>-<timestamp>".
+check "package version is ${RELEASE_VERSION}" bash -c "dpkg-deb -f '${DEB}' Version | grep -Eq '^${RELEASE_VERSION//./\\.}(-[0-9]+)?$'"
 check "architecture is amd64" test "$( dpkg-deb -f "${DEB}" Architecture )" = "amd64"
 check "maintainer is Zymfonix" bash -c "dpkg-deb -f '${DEB}' Maintainer | grep -q '^Zymfonix'"
 dpkg-deb -e "${DEB}" "${WORK}/control"
