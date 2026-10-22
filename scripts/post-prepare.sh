@@ -33,6 +33,14 @@ jq --arg n "${APP_NAME}" '.name = $n | .short_name = $n' resources/server/manife
 if [[ "${OS_NAME}" == "linux" ]]; then
   DEB=resources/linux/debian
 
+  # Upstream pipes an anonymous download from raw.githubusercontent.com into
+  # python; on shared CI runners GitHub often answers 429, which python then
+  # tries to execute. Download to a file instead: authenticated (higher limit)
+  # when GITHUB_TOKEN is set, with retries.
+  edit_text --regex build/azure-pipelines/linux/setup-env.sh \
+    'curl -s (https://raw\.githubusercontent\.com/\S+/update\.py) \| python -' \
+    'for zym_i in 1 2 3 4 5; do curl -sSf ${GITHUB_TOKEN:+-H "Authorization: Bearer ${GITHUB_TOKEN}"} -o "$PWD/.build/cr-update.py" \1 && break; sleep $(( zym_i * 20 )); done; python "$PWD/.build/cr-update.py"'
+
   # Upstream's postinst registers Microsoft's apt repository for any package
   # not named "code-oss"; VSCodium rewrote the check for "codium". Ours:
   edit_text "${DEB}/postinst.template" 'if [ "@@NAME@@" != "codium" ]; then' 'if [ "@@NAME@@" != "zymfonix-ide" ]; then'
